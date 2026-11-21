@@ -1,0 +1,2140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>AirString — Interactive Webcam String Instrument</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Inter Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- MediaPipe Hands & Camera Utils CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #07090f;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #f8fafc;
+      touch-action: none;
+    }
+
+    /* Full-screen interactive Canvas */
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    /* Hidden raw video element for MediaPipe */
+    #webcam {
+      display: none;
+    }
+
+    /* Styled compact select dropdowns */
+    select.hud-select {
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23cbd5e1' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 0.55rem center;
+      padding-right: 1.75rem;
+    }
+
+    /* Custom slim range slider for volume */
+    input[type="range"].hud-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.2);
+      outline: none;
+    }
+    input[type="range"].hud-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #ffffff;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.7);
+    }
+    input[type="range"].hud-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #38bdf8;
+      border: 2px solid #ffffff;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Hidden Webcam Element -->
+  <video id="webcam" playsinline muted autoplay></video>
+
+  <!-- Main Full-Viewport Canvas -->
+  <canvas id="stage"></canvas>
+
+  <!-- Toast Notification Banner (No alert() used) -->
+  <div id="toast"
+       class="fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-white/15 text-xs sm:text-sm font-medium text-slate-100 shadow-2xl backdrop-blur-md opacity-0 pointer-events-none transition-opacity duration-300 max-w-[85vw]">
+  </div>
+
+  <!-- Welcome Startup Overlay -->
+  <div id="welcomeOverlay"
+       class="fixed inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/82 backdrop-blur-md transition-opacity duration-300">
+    <div class="w-full max-w-xl rounded-3xl bg-slate-900/92 border border-white/12 shadow-2xl p-6 sm:p-8">
+      <!-- Brand Header -->
+      <div class="flex items-center gap-3.5 mb-3">
+        <div class="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-400 via-amber-300 to-pink-500 flex items-center justify-center shadow-lg shrink-0">
+          <svg class="w-6 h-6 text-slate-950" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+            <line x1="3" y1="18" x2="21" y2="6" />
+            <circle cx="3" cy="18" r="2.2" fill="currentColor" />
+            <circle cx="21" cy="6" r="2.2" fill="currentColor" />
+            <path d="M6.5 15.5c2.2-3 4.2 1.2 6.4-1.8s4.2 1.2 6.2-1.8" stroke-opacity="0.75" />
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-white">AirString</h1>
+          <p class="text-xs sm:text-sm text-slate-400">Physical-Modeling Webcam Air-String Instrument</p>
+        </div>
+      </div>
+
+      <p class="text-sm text-slate-300 leading-relaxed mb-5">
+        Suspend glowing acoustic strings in mid-air, stretch them to bend pitch live, and strum them with your hands or mouse. Powered by a native Karplus-Strong physical-modeling synthesizer.
+      </p>
+
+      <!-- 3-Step Gesture Cheat Sheet -->
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3.5 flex sm:flex-col items-center sm:items-start gap-3 sm:gap-2">
+          <div class="w-9 h-9 rounded-xl bg-amber-400/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0 font-bold text-sm">
+            1
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">Two-Hand Pinch</div>
+            <div class="text-[11px] text-slate-400 mt-0.5 leading-snug">Pinch both hands &amp; release to anchor a new string in mid-air.</div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3.5 flex sm:flex-col items-center sm:items-start gap-3 sm:gap-2">
+          <div class="w-9 h-9 rounded-xl bg-pink-500/15 border border-pink-400/30 flex items-center justify-center text-pink-300 shrink-0 font-bold text-sm">
+            2
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">Stretch &amp; Bend</div>
+            <div class="text-[11px] text-slate-400 mt-0.5 leading-snug">Pinch or drag any endpoint node to retune &amp; bend pitch live.</div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white/5 border border-white/10 p-3.5 flex sm:flex-col items-center sm:items-start gap-3 sm:gap-2">
+          <div class="w-9 h-9 rounded-xl bg-cyan-400/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0 font-bold text-sm">
+            3
+          </div>
+          <div>
+            <div class="text-xs font-semibold text-white">Swipe to Strum</div>
+            <div class="text-[11px] text-slate-400 mt-0.5 leading-snug">Pass any of your 5 fingertips (or mouse cursor) across strings.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Primary Action Buttons -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <button id="btnStartCamera"
+                class="flex-1 py-3.5 px-5 rounded-2xl bg-gradient-to-r from-cyan-400 via-amber-300 to-pink-500 text-slate-950 font-semibold text-sm shadow-lg hover:brightness-110 active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 7l-7 5 7 5V7z" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          </svg>
+          Start Camera &amp; Audio
+        </button>
+
+        <button id="btnStartMouse"
+                class="flex-1 py-3.5 px-5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-medium text-sm active:scale-[0.98] transition flex items-center justify-center gap-2 cursor-pointer">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
+          </svg>
+          Play with Mouse / Touch
+        </button>
+      </div>
+
+      <p class="text-[11px] text-slate-500 text-center mt-4">
+        Mouse tip: Swipe to strum • Drag endpoints to bend pitch • Shift+Drag, Right-Drag, or Draw Mode to create strings.
+      </p>
+    </div>
+  </div>
+
+  <!-- Compact Top-Left Floating Collapsible Glassmorphic Toolbar -->
+  <div id="hudWrapper" class="fixed top-3 left-3 z-30 hidden flex-col items-start gap-2 max-w-[calc(100vw-24px)]">
+    <!-- Top Header Strip (Always visible when started) -->
+    <div class="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-2xl bg-slate-950/75 border border-white/12 backdrop-blur-md shadow-xl">
+      <!-- Collapse / Expand Toggle -->
+      <button id="btnToggleHud" title="Collapse/Expand Toolbar (H)"
+              class="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white transition cursor-pointer">
+        <span class="w-2 h-2 rounded-full bg-gradient-to-r from-cyan-400 to-pink-500"></span>
+        <span>AirString</span>
+        <svg id="hudChevron" class="w-3.5 h-3.5 text-slate-300 transition-transform duration-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+      </button>
+
+      <!-- Live Audio Status Pill -->
+      <button id="btnAudioStatus"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] font-semibold text-amber-200 transition cursor-pointer">
+        <span id="audioStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        <span id="audioStatusText">Click to Enable Audio</span>
+      </button>
+
+      <!-- Test Sound Button -->
+      <button id="btnTestSound" title="Pluck a warm chord to verify audio"
+              class="px-2.5 py-1 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/35 text-[11px] font-semibold text-cyan-200 transition cursor-pointer">
+        Test Sound
+      </button>
+
+      <!-- Camera Loading / Status Indicator -->
+      <span id="cameraStatusBadge"
+            class="hidden px-2 py-1 rounded-xl bg-white/8 border border-white/10 text-[11px] font-medium text-slate-300">
+        Loading Hands...
+      </span>
+    </div>
+
+    <!-- Collapsible Controls Panel -->
+    <div id="hudPanel"
+         class="w-[310px] sm:w-[340px] max-w-[calc(100vw-24px)] rounded-2xl bg-slate-950/75 border border-white/12 backdrop-blur-md shadow-2xl p-3 flex flex-col gap-2.5 transition-all duration-200">
+      <!-- Row 1: Timbre & Scale -->
+      <div class="grid grid-cols-2 gap-2">
+        <div class="flex flex-col gap-1">
+          <label for="selectTimbre" class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Timbre</label>
+          <select id="selectTimbre"
+                  class="hud-select w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-xs font-medium text-white px-2.5 py-1.5 outline-none focus:border-cyan-400/60 cursor-pointer">
+            <option value="guitar" class="bg-slate-900">Acoustic Guitar</option>
+            <option value="harp" class="bg-slate-900">Nylon Harp</option>
+            <option value="steel" class="bg-slate-900">Bright Steel</option>
+            <option value="kalimba" class="bg-slate-900">Warm Kalimba</option>
+          </select>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label for="selectScale" class="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Scale</label>
+          <select id="selectScale"
+                  class="hud-select w-full rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-xs font-medium text-white px-2.5 py-1.5 outline-none focus:border-cyan-400/60 cursor-pointer">
+            <option value="pentatonic" class="bg-slate-900">Pentatonic</option>
+            <option value="continuous" class="bg-slate-900">Continuous</option>
+            <option value="major" class="bg-slate-900">Major</option>
+            <option value="minor" class="bg-slate-900">Minor</option>
+            <option value="chromatic" class="bg-slate-900">Chromatic</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Row 2: Action Buttons -->
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btnLoadPreset"
+                class="py-1.5 px-2.5 rounded-xl bg-gradient-to-r from-cyan-500/25 to-emerald-500/25 hover:from-cyan-500/35 hover:to-emerald-500/35 border border-cyan-400/30 text-xs font-semibold text-cyan-100 transition cursor-pointer">
+          Load Harp Preset
+        </button>
+
+        <button id="btnDrawMode"
+                class="py-1.5 px-2.5 rounded-xl bg-white/10 hover:bg-white/18 border border-white/12 text-xs font-medium text-slate-200 transition cursor-pointer">
+          Draw Mode: Off
+        </button>
+      </div>
+
+      <!-- Row 3: Volume Slider -->
+      <div class="flex items-center gap-2.5 px-1">
+        <span class="text-[10px] uppercase tracking-wider font-semibold text-slate-400 w-12">Volume</span>
+        <input id="sliderVolume" type="range" min="0" max="1" step="0.01" value="0.85" class="hud-slider flex-1" />
+        <span id="volumeValue" class="text-[11px] font-medium text-slate-300 w-8 text-right">85%</span>
+      </div>
+
+      <!-- Row 4: Utility Row (Undo, Clear, Camera, Skeleton) -->
+      <div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-white/10">
+        <button id="btnUndo" title="Undo Last String (Z)"
+                class="flex-1 py-1.5 px-2 rounded-xl bg-white/8 hover:bg-white/15 border border-white/10 text-[11px] font-medium text-slate-200 transition cursor-pointer">
+          Undo
+        </button>
+        <button id="btnClear" title="Clear All Strings (C)"
+                class="flex-1 py-1.5 px-2 rounded-xl bg-white/8 hover:bg-rose-500/30 border border-white/10 text-[11px] font-medium text-slate-200 transition cursor-pointer">
+          Clear
+        </button>
+        <button id="btnToggleCamera" title="Toggle Webcam"
+                class="flex-1 py-1.5 px-2 rounded-xl bg-white/8 hover:bg-white/15 border border-white/10 text-[11px] font-medium text-slate-200 transition cursor-pointer">
+          Cam: Off
+        </button>
+        <button id="btnToggleSkeleton" title="Toggle Hand Skeleton"
+                class="flex-1 py-1.5 px-2 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/30 text-[11px] font-medium text-emerald-200 transition cursor-pointer">
+          Hands: On
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* =====================================================================
+       * 1. CONSTANTS, SCALES & TIMBRE PRESETS
+       * ===================================================================== */
+
+      const HAND_CONNECTIONS = [
+        [0, 1], [1, 2], [2, 3], [3, 4],       // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8],       // Index
+        [5, 9], [9, 10], [10, 11], [11, 12],  // Middle
+        [9, 13], [13, 14], [14, 15], [15, 16],// Ring
+        [13, 17], [17, 18], [18, 19], [19, 20],// Pinky
+        [0, 17]                               // Palm base
+      ];
+
+      const FINGERTIP_INDICES = [4, 8, 12, 16, 20];
+
+      // Normalized MediaPipe pinch hysteresis thresholds (0..1 space)
+      const PINCH_ENGAGE_NORM = 0.055;
+      const PINCH_RELEASE_NORM = 0.085;
+
+      // Interaction tolerances
+      const HAND_ENDPOINT_GRAB_RADIUS = 38;
+      const MOUSE_ENDPOINT_GRAB_RADIUS = 24;
+      const MIN_STRING_LENGTH = 60;
+      const PLUCK_COOLDOWN_MS = 95;
+      const MAX_SPARKS = 500;
+
+      // Musical scales (semitone offsets from C)
+      const SCALES = {
+        pentatonic: [0, 2, 4, 7, 9],
+        major:      [0, 2, 4, 5, 7, 9, 11],
+        minor:      [0, 2, 3, 5, 7, 8, 10],
+        chromatic:  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        continuous: null
+      };
+
+      const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+      // 4 Distinct Physical-Modeling Karplus-Strong Timbre Presets
+      const TIMBRE_PRESETS = {
+        guitar: {
+          name: 'Acoustic Guitar',
+          filterBlend: 0.44,    // 2-point LP damping coefficient (higher = warmer)
+          attackLP: 0.36,       // Initial pluck noise softness
+          woodySineMix: 0.16,   // Subtle warm fundamental transient
+          combStrength: 0.72,   // Pluck-position comb strength
+          decayTime: 3.1,       // Base sustain time in seconds
+          body110Gain: 4.5,     // Air cavity resonance (dB)
+          body260Gain: 5.0,     // Soundboard top resonance (dB)
+          presenceGain: 1.5,    // High-shelf presence (dB)
+          reverbWet: 0.28
+        },
+        harp: {
+          name: 'Nylon Harp',
+          filterBlend: 0.56,
+          attackLP: 0.58,
+          woodySineMix: 0.24,
+          combStrength: 0.52,
+          decayTime: 4.2,
+          body110Gain: 3.0,
+          body260Gain: 3.5,
+          presenceGain: -1.5,
+          reverbWet: 0.40
+        },
+        steel: {
+          name: 'Bright Steel',
+          filterBlend: 0.24,
+          attackLP: 0.16,
+          woodySineMix: 0.08,
+          combStrength: 0.84,
+          decayTime: 3.5,
+          body110Gain: 2.5,
+          body260Gain: 3.0,
+          presenceGain: 5.5,
+          reverbWet: 0.30
+        },
+        kalimba: {
+          name: 'Warm Kalimba',
+          filterBlend: 0.38,
+          attackLP: 0.46,
+          woodySineMix: 0.44,
+          combStrength: 0.62,
+          decayTime: 1.85,
+          body110Gain: 2.0,
+          body260Gain: 7.5,
+          presenceGain: 1.0,
+          reverbWet: 0.34
+        }
+      };
+
+      /* =====================================================================
+       * 2. NATIVE WEB AUDIO KARPLUS-STRONG ENGINE (ZERO WORKLETS / ZERO BLOBS)
+       * ===================================================================== */
+
+      class KarplusStrongAudioEngine {
+        constructor() {
+          this.ctx = null;
+          this.timbreKey = 'guitar';
+          this.masterVolume = 0.85;
+
+          // Shared audio graph nodes
+          this.inputBus = null;
+          this.body110 = null;
+          this.body260 = null;
+          this.presenceShelf = null;
+          this.reverbDry = null;
+          this.reverbWet = null;
+          this.masterGain = null;
+          this.onStateChangeCallback = null;
+        }
+
+        /**
+         * Synchronously creates and unlocks the Web Audio Context.
+         * MUST be called directly inside a user gesture handler BEFORE any await!
+         */
+        unlockSync() {
+          try {
+            if (!this.ctx) {
+              const AudioCtx = window.AudioContext || window.webkitAudioContext;
+              this.ctx = new AudioCtx();
+              this.buildMasterGraph();
+              this.ctx.onstatechange = () => {
+                if (this.onStateChangeCallback) {
+                  this.onStateChangeCallback(this.ctx.state);
+                }
+              };
+            }
+
+            if (this.ctx.state !== 'running') {
+              // Synchronous call inside gesture stack
+              this.ctx.resume().catch(() => {});
+            }
+
+            // Play a 1-sample silent AudioBuffer for Safari / iOS audio unlock
+            const silentBuf = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+            const silentSrc = this.ctx.createBufferSource();
+            silentSrc.buffer = silentBuf;
+            silentSrc.connect(this.ctx.destination);
+            silentSrc.start(0);
+
+            if (this.onStateChangeCallback) {
+              this.onStateChangeCallback(this.ctx.state);
+            }
+          } catch (err) {
+            console.error('Audio unlock error:', err);
+          }
+        }
+
+        get state() {
+          return this.ctx ? this.ctx.state : 'uninitialized';
+        }
+
+        buildMasterGraph() {
+          const ctx = this.ctx;
+          const preset = TIMBRE_PRESETS[this.timbreKey];
+
+          // Input bus receiving all plucked string AudioBufferSourceNodes
+          this.inputBus = ctx.createGain();
+          this.inputBus.gain.value = 1.0;
+
+          // Acoustic Body Resonator (3 BiquadFilterNodes mimicking a wooden soundboard)
+          this.body110 = ctx.createBiquadFilter();
+          this.body110.type = 'peaking';
+          this.body110.frequency.value = 110;
+          this.body110.Q.value = 2.4;
+          this.body110.gain.value = preset.body110Gain;
+
+          this.body260 = ctx.createBiquadFilter();
+          this.body260.type = 'peaking';
+          this.body260.frequency.value = 260;
+          this.body260.Q.value = 2.0;
+          this.body260.gain.value = preset.body260Gain;
+
+          this.presenceShelf = ctx.createBiquadFilter();
+          this.presenceShelf.type = 'highshelf';
+          this.presenceShelf.frequency.value = 2800;
+          this.presenceShelf.gain.value = preset.presenceGain;
+
+          this.inputBus.connect(this.body110);
+          this.body110.connect(this.body260);
+          this.body260.connect(this.presenceShelf);
+
+          // Master Stereo Room Reverb (ConvolverNode with procedural warm stereo IR)
+          const convolver = ctx.createConvolver();
+          convolver.buffer = this.createStereoReverbIR(2.1, 2.8);
+
+          this.reverbDry = ctx.createGain();
+          this.reverbWet = ctx.createGain();
+          this.reverbDry.gain.value = 1.0 - preset.reverbWet * 0.25;
+          this.reverbWet.gain.value = preset.reverbWet;
+
+          this.presenceShelf.connect(this.reverbDry);
+          this.presenceShelf.connect(convolver);
+          convolver.connect(this.reverbWet);
+
+          // DynamicsCompressorNode Limiter to keep big chords lush & clip-free
+          const limiter = ctx.createDynamicsCompressor();
+          limiter.threshold.value = -10;
+          limiter.knee.value = 12;
+          limiter.ratio.value = 8;
+          limiter.attack.value = 0.003;
+          limiter.release.value = 0.14;
+
+          this.masterGain = ctx.createGain();
+          this.masterGain.gain.value = this.masterVolume;
+
+          this.reverbDry.connect(limiter);
+          this.reverbWet.connect(limiter);
+          limiter.connect(this.masterGain);
+          this.masterGain.connect(ctx.destination);
+        }
+
+        /**
+         * Procedural smooth stereo room impulse response for ConvolverNode
+         */
+        createStereoReverbIR(durationSec, decayPower) {
+          const sr = this.ctx.sampleRate;
+          const length = Math.floor(sr * durationSec);
+          const ir = this.ctx.createBuffer(2, length, sr);
+
+          for (let ch = 0; ch < 2; ch++) {
+            const data = ir.getChannelData(ch);
+            let lp = 0;
+            for (let i = 0; i < length; i++) {
+              const t = i / length;
+              const env = Math.pow(1 - t, decayPower);
+              const noise = Math.random() * 2 - 1;
+              // Warm lowpass damping on room reflections
+              lp = lp * 0.72 + noise * 0.28;
+              data[i] = lp * env * 0.48;
+            }
+            // Subtle stereo early reflections
+            const taps = ch === 0 ? [0.011, 0.024, 0.038] : [0.014, 0.029, 0.043];
+            taps.forEach((sec, idx) => {
+              const pos = Math.floor(sec * sr);
+              if (pos < length) {
+                data[pos] += (0.22 / (idx + 1)) * (idx % 2 === 0 ? 1 : -1);
+              }
+            });
+          }
+          return ir;
+        }
+
+        setTimbre(key) {
+          if (!TIMBRE_PRESETS[key]) return;
+          this.timbreKey = key;
+          if (!this.ctx) return;
+          const p = TIMBRE_PRESETS[key];
+          const t = this.ctx.currentTime;
+          this.body110.gain.setTargetAtTime(p.body110Gain, t, 0.04);
+          this.body260.gain.setTargetAtTime(p.body260Gain, t, 0.04);
+          this.presenceShelf.gain.setTargetAtTime(p.presenceGain, t, 0.04);
+          this.reverbWet.gain.setTargetAtTime(p.reverbWet, t, 0.04);
+          this.reverbDry.gain.setTargetAtTime(1.0 - p.reverbWet * 0.25, t, 0.04);
+        }
+
+        setVolume(val) {
+          this.masterVolume = Math.max(0, Math.min(1, val));
+          if (this.masterGain && this.ctx) {
+            this.masterGain.gain.setTargetAtTime(this.masterVolume, this.ctx.currentTime, 0.02);
+          }
+        }
+
+        /**
+         * Synchronously synthesizes a 2.8-second Karplus-Strong physical-modeling
+         * AudioBuffer (<1ms compute time) with exact fractional delay tuning,
+         * pluck-position comb filtering, velocity-scaled excitation, and zero-click envelopes.
+         */
+        synthesizePluckBuffer(freq, velocity, pluckPos, preset) {
+          const sr = this.ctx.sampleRate;
+          const durationSec = 2.8;
+          const totalSamples = Math.floor(sr * durationSec);
+          const buffer = this.ctx.createBuffer(1, totalSamples, sr);
+          const out = buffer.getChannelData(0);
+
+          const safeFreq = Math.max(70, Math.min(1500, freq));
+          const vel = Math.max(0.18, Math.min(1.0, velocity));
+          const velAmp = 0.28 + 0.72 * Math.pow(vel, 1.25);
+
+          // 2-point low-pass damping coefficient (a in [0.15..0.65])
+          // Higher frequencies get slightly gentler damping blend to keep presence natural
+          const a = Math.max(0.15, Math.min(0.68, preset.filterBlend));
+
+          // Exact fractional delay length compensating for the 2-point filter's phase delay `a`
+          const exactDelay = Math.max(2.0, (sr / safeFreq) - a);
+          const periodInt = Math.max(3, Math.round(sr / safeFreq));
+          const ringLen = Math.ceil(exactDelay) + 8;
+          const ring = new Float32Array(ringLen);
+
+          // 1. Generate velocity-scaled filtered white noise + subtle woody sine transient
+          const rawExc = new Float32Array(periodInt);
+          const attackAlpha = Math.max(0.08, Math.min(0.88, preset.attackLP + (1.0 - vel) * 0.24));
+          let lp = 0;
+          let mean = 0;
+
+          for (let i = 0; i < periodInt; i++) {
+            const white = Math.random() * 2 - 1;
+            lp = lp * attackAlpha + white * (1 - attackAlpha);
+            const woodySine = Math.sin((2 * Math.PI * i) / periodInt) * preset.woodySineMix;
+            const sample = lp * (1 - preset.woodySineMix) + woodySine;
+            rawExc[i] = sample;
+            mean += sample;
+          }
+          mean /= periodInt;
+
+          // 2. Apply pluck-position comb filtering (0.08..0.92)
+          // Middle (0.5) cancels even harmonics -> warm/round; near ends -> bright/twangy
+          const clampedPos = Math.max(0.08, Math.min(0.92, pluckPos));
+          const combDelay = Math.max(1, Math.min(periodInt - 1, Math.round(clampedPos * periodInt)));
+          const combMix = preset.combStrength;
+
+          // Fill ring buffer behind writeIdx = periodInt
+          for (let i = 0; i < periodInt; i++) {
+            const x = rawExc[i] - mean;
+            const d = rawExc[(i - combDelay + periodInt) % periodInt] - mean;
+            ring[i] = (x - combMix * d) * velAmp * 0.78;
+          }
+
+          // 3. Frequency-dependent feedback loop gain for natural acoustic decay
+          const freqDecayFactor = Math.max(0.35, Math.min(1.5, Math.pow(240 / safeFreq, 0.42)));
+          const effDecaySec = Math.max(0.45, preset.decayTime * freqDecayFactor);
+          const feedbackGain = Math.min(0.9985, Math.pow(0.001, 1 / (effDecaySec * safeFreq)));
+
+          // 4. Run Karplus-Strong synthesis loop with linear fractional interpolation
+          let writeIdx = periodInt % ringLen;
+          let prevDelayed = 0;
+          let dcX1 = 0;
+          let dcY1 = 0;
+
+          const fadeInSamples = Math.max(1, Math.floor(sr * 0.002));  // 2ms zero-click fade-in
+          const fadeOutSamples = Math.floor(sr * 0.22);                // 220ms tail fade-out
+          const fadeOutStart = totalSamples - fadeOutSamples;
+
+          for (let n = 0; n < totalSamples; n++) {
+            let readPos = writeIdx - exactDelay;
+            if (readPos < 0) readPos += ringLen;
+
+            const idx0 = readPos | 0;
+            const idx1 = (idx0 + 1) % ringLen;
+            const frac = readPos - idx0;
+
+            const delayed = ring[idx0] * (1 - frac) + ring[idx1] * frac;
+
+            // 2-point low-pass damping filter: y = (1 - a)*x[n] + a*x[n-1]
+            const filtered = (1 - a) * delayed + a * prevDelayed;
+            prevDelayed = delayed;
+
+            // Subtle DC blocker to prevent baseline drift
+            const dcClean = filtered - dcX1 + 0.996 * dcY1;
+            dcX1 = filtered;
+            dcY1 = dcClean;
+
+            ring[writeIdx] = dcClean * feedbackGain;
+            writeIdx++;
+            if (writeIdx >= ringLen) writeIdx = 0;
+
+            // Apply 2ms fade-in and natural exponential tail fade-out
+            let env = 1.0;
+            if (n < fadeInSamples) {
+              env = n / fadeInSamples;
+            } else if (n > fadeOutStart) {
+              const rem = (totalSamples - n) / fadeOutSamples;
+              env = rem * rem;
+            }
+
+            // Soft warm saturation to prevent any harsh peaks
+            out[n] = Math.tanh(dcClean * env * 1.15);
+          }
+
+          return buffer;
+        }
+
+        /**
+         * Plucks a string, smoothly fading out any previous ringing voice on that
+         * same string over 25ms, and returns the live voice handle for real-time pitch bending.
+         */
+        pluck(freq, velocity, pluckPos, pan = 0, previousVoice = null) {
+          if (!this.ctx) {
+            this.unlockSync();
+          }
+          if (!this.ctx) return null;
+          if (this.ctx.state !== 'running') {
+            this.ctx.resume().catch(() => {});
+          }
+
+          const now = this.ctx.currentTime;
+
+          // Smoothly fade out previous voice on the same string in 25ms (zero clicks)
+          if (previousVoice && previousVoice.gain) {
+            try {
+              previousVoice.gain.gain.cancelScheduledValues(now);
+              previousVoice.gain.gain.setValueAtTime(Math.max(0.0001, previousVoice.gain.gain.value), now);
+              previousVoice.gain.gain.linearRampToValueAtTime(0.0001, now + 0.025);
+              previousVoice.source.stop(now + 0.032);
+            } catch (_) {}
+          }
+
+          const preset = TIMBRE_PRESETS[this.timbreKey];
+          const buffer = this.synthesizePluckBuffer(freq, velocity, pluckPos, preset);
+
+          const source = this.ctx.createBufferSource();
+          source.buffer = buffer;
+
+          const voiceGain = this.ctx.createGain();
+          voiceGain.gain.setValueAtTime(0.95, now);
+
+          // Optional stereo panning based on string horizontal position
+          if (typeof this.ctx.createStereoPanner === 'function') {
+            const panner = this.ctx.createStereoPanner();
+            panner.pan.setValueAtTime(Math.max(-0.75, Math.min(0.75, pan)), now);
+            source.connect(voiceGain);
+            voiceGain.connect(panner);
+            panner.connect(this.inputBus);
+          } else {
+            source.connect(voiceGain);
+            voiceGain.connect(this.inputBus);
+          }
+
+          const voice = {
+            source,
+            gain: voiceGain,
+            baseFreq: freq,
+            active: true
+          };
+
+          source.onended = () => {
+            voice.active = false;
+            try {
+              source.disconnect();
+              voiceGain.disconnect();
+            } catch (_) {}
+          };
+
+          source.start(now);
+          return voice;
+        }
+
+        /**
+         * Smoothly bends the pitch of a currently ringing string in real time
+         */
+        bendVoice(voice, newFreq) {
+          if (!this.ctx || !voice || !voice.active || !voice.source) return;
+          const ratio = Math.max(0.25, Math.min(4.0, newFreq / voice.baseFreq));
+          voice.source.playbackRate.setTargetAtTime(ratio, this.ctx.currentTime, 0.015);
+        }
+
+        /**
+         * Plays a warm C-major-9 arpeggiated chord to verify audio immediately
+         */
+        playTestChord() {
+          this.unlockSync();
+          const notes = [261.63, 329.63, 392.00, 493.88, 587.33]; // C4 E4 G4 B4 D5
+          notes.forEach((f, idx) => {
+            setTimeout(() => {
+              const pan = -0.5 + idx * 0.25;
+              this.pluck(f, 0.72, 0.35 + idx * 0.07, pan, null);
+            }, idx * 75);
+          });
+        }
+      }
+
+      /* =====================================================================
+       * 3. PITCH, SCALE & NEON COLOR MAPPING
+       * ===================================================================== */
+
+      let currentScale = 'pentatonic';
+
+      /**
+       * Maps string pixel length inversely to frequency:
+       * 60px -> ~980 Hz (short = high pitch)
+       * 700px -> ~110 Hz (long = low pitch)
+       */
+      function lengthToFrequency(lengthPx, scaleMode = currentScale) {
+        const clampedLen = Math.max(55, Math.min(900, lengthPx));
+        // Power-law fit passing cleanly through (60px -> 980Hz) and (700px -> 110Hz)
+        let rawFreq = 980 * Math.pow(60 / clampedLen, 0.89);
+        rawFreq = Math.max(80, Math.min(1400, rawFreq));
+
+        const scale = SCALES[scaleMode];
+        if (!scale) {
+          return rawFreq; // Continuous / fretless mode
+        }
+
+        // Quantize to nearest scale note
+        const midiExact = 69 + 12 * Math.log2(rawFreq / 440);
+        let bestMidi = Math.round(midiExact);
+        let minDiff = Infinity;
+
+        const startMidi = Math.floor(midiExact) - 12;
+        for (let m = startMidi; m <= startMidi + 24; m++) {
+          const pc = ((m % 12) + 12) % 12;
+          if (scale.includes(pc)) {
+            const diff = Math.abs(m - midiExact);
+            if (diff < minDiff) {
+              minDiff = diff;
+              bestMidi = m;
+            }
+          }
+        }
+
+        return 440 * Math.pow(2, (bestMidi - 69) / 12);
+      }
+
+      function freqToNoteName(freq) {
+        const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+        const name = NOTE_NAMES[((midi % 12) + 12) % 12];
+        const octave = Math.floor(midi / 12) - 1;
+        return `${name}${octave}`;
+      }
+
+      /**
+       * Pitch-mapped neon glow colors:
+       * Low notes: Cyan / Mint -> Mid notes: Warm Gold -> Short high notes: Hot Pink / Magenta
+       */
+      function freqToNeonColor(freq) {
+        const minLog = Math.log2(80);
+        const maxLog = Math.log2(1200);
+        const u = Math.max(0, Math.min(1, (Math.log2(freq) - minLog) / (maxLog - minLog)));
+
+        const stops = [
+          { t: 0.00, r: 45,  g: 245, b: 235 }, // Electric Cyan (Low)
+          { t: 0.25, r: 82,  g: 255, b: 175 }, // Luminous Mint (Low-Mid)
+          { t: 0.52, r: 255, g: 214, b: 78  }, // Warm Gold (Mid)
+          { t: 0.78, r: 255, g: 98,  b: 176 }, // Hot Pink (Mid-High)
+          { t: 1.00, r: 235, g: 72,  b: 255 }  // Vivid Magenta (High)
+        ];
+
+        for (let i = 0; i < stops.length - 1; i++) {
+          const a = stops[i];
+          const b = stops[i + 1];
+          if (u >= a.t && u <= b.t) {
+            const f = (u - a.t) / (b.t - a.t);
+            const r = Math.round(a.r + (b.r - a.r) * f);
+            const g = Math.round(a.g + (b.g - a.g) * f);
+            const bl = Math.round(a.b + (b.b - a.b) * f);
+            return { r, g, b: bl, css: `rgb(${r}, ${g}, ${bl})` };
+          }
+        }
+        return { r: 235, g: 72, b: 255, css: 'rgb(235, 72, 255)' };
+      }
+
+      /* =====================================================================
+       * 4. 2D GEOMETRY HELPERS
+       * ===================================================================== */
+
+      function dist(x1, y1, x2, y2) {
+        return Math.hypot(x2 - x1, y2 - y1);
+      }
+
+      /**
+       * Exact 2D line-segment intersection between moving path P1->P2 and string A->B.
+       * Returns { x, y, t } where t in [0, 1] is normalized position along A->B, or null.
+       */
+      function segmentIntersection(p1x, p1y, p2x, p2y, ax, ay, bx, by) {
+        const rX = p2x - p1x;
+        const rY = p2y - p1y;
+        const sX = bx - ax;
+        const sY = by - ay;
+
+        const denom = rX * sY - rY * sX;
+        if (Math.abs(denom) < 1e-6) return null;
+
+        const qpX = ax - p1x;
+        const qpY = ay - p1y;
+
+        const u = (qpX * sY - qpY * sX) / denom;
+        const t = (qpX * rY - qpY * rX) / denom;
+
+        if (u >= 0 && u <= 1 && t >= 0.015 && t <= 0.985) {
+          return {
+            x: ax + t * sX,
+            y: ay + t * sY,
+            t
+          };
+        }
+        return null;
+      }
+
+      /* =====================================================================
+       * 5. STRING ENTITY & SPARK PARTICLE SYSTEM
+       * ===================================================================== */
+
+      let nextStringId = 1;
+      const strings = [];
+      const sparks = [];
+
+      class AirStringEntity {
+        constructor(ax, ay, bx, by) {
+          this.id = nextStringId++;
+          this.ax = ax;
+          this.ay = ay;
+          this.bx = bx;
+          this.by = by;
+
+          this.energy = 0;
+          this.phase = 0;
+          this.pluckPos = 0.5;
+          this.visualSpeed = 38;
+
+          this.freq = 220;
+          this.noteName = 'A3';
+          this.color = freqToNeonColor(220);
+
+          // Live Web Audio voice handle for real-time pitch bending & click-free re-pluck
+          this.activeVoice = null;
+
+          this.recalculatePhysics();
+        }
+
+        get length() {
+          return dist(this.ax, this.ay, this.bx, this.by);
+        }
+
+        recalculatePhysics() {
+          const len = this.length;
+          this.freq = lengthToFrequency(len, currentScale);
+          this.noteName = freqToNoteName(this.freq);
+          this.color = freqToNeonColor(this.freq);
+          this.visualSpeed = 30 + Math.min(58, Math.sqrt(this.freq) * 1.45);
+        }
+
+        pluck(t, velocity, hitX, hitY, vx, vy, viewportW, audioEngine) {
+          this.pluckPos = Math.max(0.08, Math.min(0.92, t));
+          this.energy = Math.min(1.25, Math.max(this.energy * 0.6, 0.38 + velocity * 0.88));
+
+          const midX = (this.ax + this.bx) * 0.5;
+          const pan = ((midX / Math.max(1, viewportW)) * 2 - 1) * 0.72;
+
+          this.activeVoice = audioEngine.pluck(
+            this.freq,
+            velocity,
+            this.pluckPos,
+            pan,
+            this.activeVoice
+          );
+
+          spawnSparks(hitX, hitY, this.ax, this.ay, this.bx, this.by, vx, vy, velocity, this.color);
+        }
+
+        update(dt) {
+          if (this.energy > 0.002) {
+            this.phase += this.visualSpeed * dt;
+            const decaySec = TIMBRE_PRESETS[audioEngine.timbreKey].decayTime;
+            const factor = Math.exp((-2.35 / Math.max(1.0, decaySec * 0.72)) * dt);
+            this.energy *= factor;
+            if (this.energy < 0.003) this.energy = 0;
+          }
+        }
+      }
+
+      /**
+       * Spawns 20-35 velocity-aligned glowing spark streaks shooting outward
+       * perpendicular to the string from the exact pluck intersection point.
+       */
+      function spawnSparks(x, y, ax, ay, bx, by, fingerVx, fingerVy, velocity, color) {
+        const count = Math.round(20 + velocity * 15);
+        const dx = bx - ax;
+        const dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+
+        for (let i = 0; i < count; i++) {
+          if (sparks.length >= MAX_SPARKS) {
+            sparks.shift();
+          }
+
+          const side = Math.random() < 0.5 ? 1 : -1;
+          const spread = (Math.random() - 0.5) * 1.15;
+          const angle = Math.atan2(ny * side, nx * side) + spread;
+          const speed = (110 + Math.random() * 290) * (0.55 + velocity * 0.65);
+
+          const offsetAlong = (Math.random() - 0.5) * 16;
+          sparks.push({
+            x: x + (dx / len) * offsetAlong,
+            y: y + (dy / len) * offsetAlong,
+            vx: Math.cos(angle) * speed + fingerVx * 0.1,
+            vy: Math.sin(angle) * speed + fingerVy * 0.1,
+            life: 1.0,
+            decay: 1.3 + Math.random() * 1.5,
+            size: 1.2 + Math.random() * 1.5,
+            isWhite: Math.random() < 0.52,
+            color: color.css
+          });
+        }
+      }
+
+      function updateSparks(dt) {
+        const drag = Math.pow(0.16, dt);
+        const gravity = 230;
+
+        for (let i = sparks.length - 1; i >= 0; i--) {
+          const p = sparks[i];
+          p.x += p.vx * dt;
+          p.y += p.vy * dt;
+          p.vx *= drag;
+          p.vy = p.vy * drag + gravity * dt;
+          p.life -= p.decay * dt;
+          if (p.life <= 0) {
+            sparks.splice(i, 1);
+          }
+        }
+      }
+
+      /* =====================================================================
+       * 6. APP STATE, CANVAS & GESTURE TRACKING
+       * ===================================================================== */
+
+      const canvas = document.getElementById('stage');
+      const ctx = canvas.getContext('2d');
+      const video = document.getElementById('webcam');
+      const audioEngine = new KarplusStrongAudioEngine();
+
+      let viewW = window.innerWidth;
+      let viewH = window.innerHeight;
+      let dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+      let isStarted = false;
+      let cameraActive = false;
+      let showSkeleton = true;
+      let drawMode = false;
+      let hudExpanded = true;
+
+      let handsDetector = null;
+      let mpCamera = null;
+      let isSendingFrame = false;
+
+      const trackedHands = new Map();
+      const pluckCooldowns = new Map();
+
+      let twoHandPreview = null; // { x1, y1, x2, y2 }
+      let hoveredEndpoint = null; // { string, end: 'A' | 'B' }
+
+      // Mouse / Touch interaction state
+      const pointer = {
+        down: false,
+        mode: 'idle', // 'idle' | 'drawing' | 'draggingEndpoint' | 'touchStrum'
+        startX: 0,
+        startY: 0,
+        x: 0,
+        y: 0,
+        prevX: 0,
+        prevY: 0,
+        hasPrev: false,
+        grabbed: null
+      };
+
+      function resizeCanvas() {
+        const oldW = viewW;
+        const oldH = viewH;
+        viewW = window.innerWidth;
+        viewH = window.innerHeight;
+        dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.floor(viewW * dpr);
+        canvas.height = Math.floor(viewH * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        if (oldW > 0 && oldH > 0 && (oldW !== viewW || oldH !== viewH)) {
+          const sx = viewW / oldW;
+          const sy = viewH / oldH;
+          for (const s of strings) {
+            s.ax *= sx;
+            s.ay *= sy;
+            s.bx *= sx;
+            s.by *= sy;
+            s.recalculatePhysics();
+          }
+        }
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      function getVideoCoverRect() {
+        const vw = video.videoWidth || 1280;
+        const vh = video.videoHeight || 720;
+        const scale = Math.max(viewW / vw, viewH / vh);
+        const drawW = vw * scale;
+        const drawH = vh * scale;
+        return {
+          drawW,
+          drawH,
+          offsetX: (viewW - drawW) * 0.5,
+          offsetY: (viewH - drawH) * 0.5
+        };
+      }
+
+      function landmarkToScreen(lm, coverRect) {
+        return {
+          x: coverRect.offsetX + (1 - lm.x) * coverRect.drawW,
+          y: coverRect.offsetY + lm.y * coverRect.drawH
+        };
+      }
+
+      /* =====================================================================
+       * 7. MEDIAPIPE HAND TRACKING & GESTURE ENGINE
+       * ===================================================================== */
+
+      function onMediaPipeResults(results) {
+        const now = performance.now();
+        const coverRect = getVideoCoverRect();
+        const multiLandmarks = results.multiHandLandmarks || [];
+        const multiHandedness = results.multiHandedness || [];
+        const seenKeys = new Set();
+
+        for (let i = 0; i < multiLandmarks.length; i++) {
+          const rawLms = multiLandmarks[i];
+          const label = (multiHandedness[i] && multiHandedness[i].label) ? multiHandedness[i].label : `Hand${i}`;
+          const key = seenKeys.has(label) ? `${label}_${i}` : label;
+          seenKeys.add(key);
+
+          const pts = rawLms.map(lm => landmarkToScreen(lm, coverRect));
+
+          // Smooth pinch hysteresis using normalized landmark distance (< 0.055 engage, > 0.085 release)
+          const normPinchDist = Math.hypot(
+            rawLms[4].x - rawLms[8].x,
+            rawLms[4].y - rawLms[8].y
+          );
+
+          let hand = trackedHands.get(key);
+          if (!hand) {
+            hand = {
+              key,
+              pts,
+              prevTips: {},
+              isPinching: false,
+              pinchX: (pts[4].x + pts[8].x) * 0.5,
+              pinchY: (pts[4].y + pts[8].y) * 0.5,
+              grabbed: null,
+              lastSeen: now
+            };
+            trackedHands.set(key, hand);
+          }
+
+          const wasPinching = hand.isPinching;
+          if (!wasPinching && normPinchDist < PINCH_ENGAGE_NORM) {
+            hand.isPinching = true;
+          } else if (wasPinching && normPinchDist > PINCH_RELEASE_NORM) {
+            hand.isPinching = false;
+          }
+
+          // Light low-pass smoothing on pinch midpoint for rock-steady anchor placement
+          const rawPX = (pts[4].x + pts[8].x) * 0.5;
+          const rawPY = (pts[4].y + pts[8].y) * 0.5;
+          hand.pinchX = hand.pinchX * 0.3 + rawPX * 0.7;
+          hand.pinchY = hand.pinchY * 0.3 + rawPY * 0.7;
+
+          const dt = Math.max(0.008, Math.min(0.08, (now - hand.lastSeen) / 1000));
+          hand.pts = pts;
+          hand.lastSeen = now;
+
+          // Single-hand pinch to grab an existing endpoint (within 38px)
+          if (hand.isPinching && !wasPinching && !twoHandPreview) {
+            const grabbed = findNearestAvailableEndpoint(hand.pinchX, hand.pinchY, HAND_ENDPOINT_GRAB_RADIUS, key);
+            if (grabbed) {
+              hand.grabbed = grabbed;
+            }
+          } else if (!hand.isPinching && hand.grabbed) {
+            hand.grabbed = null;
+          }
+
+          // Move grabbed endpoint & smoothly bend pitch of ringing string in real time
+          if (hand.isPinching && hand.grabbed) {
+            const { string, end } = hand.grabbed;
+            if (end === 'A') {
+              string.ax = hand.pinchX;
+              string.ay = hand.pinchY;
+            } else {
+              string.bx = hand.pinchX;
+              string.by = hand.pinchY;
+            }
+            string.recalculatePhysics();
+            audioEngine.bendVoice(string.activeVoice, string.freq);
+          }
+
+          // Track all 5 fingertips for zero-missed-swipe plucking & strumming
+          for (const tipIdx of FINGERTIP_INDICES) {
+            const curr = pts[tipIdx];
+            const prev = hand.prevTips[tipIdx];
+            const ignoreTip = (hand.isPinching || hand.grabbed || twoHandPreview) && (tipIdx === 4 || tipIdx === 8);
+
+            if (prev && !ignoreTip) {
+              const moveDist = dist(prev.x, prev.y, curr.x, curr.y);
+              if (moveDist > 2.0) {
+                const vx = (curr.x - prev.x) / dt;
+                const vy = (curr.y - prev.y) / dt;
+                checkPluckSegment(`${key}_t${tipIdx}`, prev.x, prev.y, curr.x, curr.y, vx, vy, Math.hypot(vx, vy), now);
+              }
+            }
+            hand.prevTips[tipIdx] = { x: curr.x, y: curr.y };
+          }
+        }
+
+        // Prune vanished hands
+        for (const [key, hand] of trackedHands.entries()) {
+          if (!seenKeys.has(key) && now - hand.lastSeen > 120) {
+            trackedHands.delete(key);
+          }
+        }
+
+        // Two-Hand Pinch String Creation
+        const activeHands = Array.from(trackedHands.values());
+        const freePinchers = activeHands.filter(h => h.isPinching && !h.grabbed);
+
+        if (freePinchers.length >= 2) {
+          twoHandPreview = {
+            x1: freePinchers[0].pinchX,
+            y1: freePinchers[0].pinchY,
+            x2: freePinchers[1].pinchX,
+            y2: freePinchers[1].pinchY
+          };
+        } else if (twoHandPreview) {
+          const len = dist(twoHandPreview.x1, twoHandPreview.y1, twoHandPreview.x2, twoHandPreview.y2);
+          if (len >= MIN_STRING_LENGTH) {
+            createStringWithConfirmation(twoHandPreview.x1, twoHandPreview.y1, twoHandPreview.x2, twoHandPreview.y2);
+          }
+          twoHandPreview = null;
+        }
+      }
+
+      function createStringWithConfirmation(x1, y1, x2, y2) {
+        const s = new AirStringEntity(x1, y1, x2, y2);
+        strings.push(s);
+        // Soft confirmation pluck at center so user hears the new string's note immediately
+        const mx = (x1 + x2) * 0.5;
+        const my = (y1 + y2) * 0.5;
+        s.pluck(0.5, 0.45, mx, my, 0, -120, viewW, audioEngine);
+        return s;
+      }
+
+      function findNearestAvailableEndpoint(x, y, maxRadius, requesterKey) {
+        let best = null;
+        let bestDist = maxRadius;
+
+        for (const s of strings) {
+          const heldA = isEndpointHeld(s, 'A', requesterKey);
+          const heldB = isEndpointHeld(s, 'B', requesterKey);
+
+          const dA = dist(x, y, s.ax, s.ay);
+          if (!heldA && dA < bestDist) {
+            bestDist = dA;
+            best = { string: s, end: 'A' };
+          }
+          const dB = dist(x, y, s.bx, s.by);
+          if (!heldB && dB < bestDist) {
+            bestDist = dB;
+            best = { string: s, end: 'B' };
+          }
+        }
+        return best;
+      }
+
+      function isEndpointHeld(stringObj, end, excludeKey) {
+        for (const [k, h] of trackedHands.entries()) {
+          if (k !== excludeKey && h.grabbed && h.grabbed.string === stringObj && h.grabbed.end === end) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function checkPluckSegment(actorKey, x1, y1, x2, y2, vx, vy, speed, now) {
+        const velocity = Math.max(0.25, Math.min(1.0, speed / 1400));
+
+        for (const s of strings) {
+          const hit = segmentIntersection(x1, y1, x2, y2, s.ax, s.ay, s.bx, s.by);
+          if (hit) {
+            const cdKey = `${actorKey}_${s.id}`;
+            const last = pluckCooldowns.get(cdKey) || 0;
+            if (now - last >= PLUCK_COOLDOWN_MS) {
+              pluckCooldowns.set(cdKey, now);
+              s.pluck(hit.t, velocity, hit.x, hit.y, vx, vy, viewW, audioEngine);
+            }
+          }
+        }
+      }
+
+      /* =====================================================================
+       * 8. MOUSE & TOUCH INTERACTIONS (ALWAYS ACTIVE ALONGSIDE WEBCAM)
+       * ===================================================================== */
+
+      function getPointerPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: e.clientX - rect.left,
+          y: e.clientY - rect.top
+        };
+      }
+
+      // Allow right-click drag to draw strings smoothly without opening context menu
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+      canvas.addEventListener('pointerdown', (e) => {
+        if (!isStarted) return;
+        audioEngine.unlockSync();
+
+        const pos = getPointerPos(e);
+        canvas.setPointerCapture(e.pointerId);
+
+        pointer.down = true;
+        pointer.startX = pos.x;
+        pointer.startY = pos.y;
+        pointer.x = pos.x;
+        pointer.y = pos.y;
+        pointer.prevX = pos.x;
+        pointer.prevY = pos.y;
+        pointer.hasPrev = true;
+
+        const isDrawGesture = drawMode || e.shiftKey || e.button === 2;
+
+        if (!isDrawGesture) {
+          // 1. Check if grabbing an existing endpoint (within 24px)
+          const grabbed = findNearestAvailableEndpoint(pos.x, pos.y, MOUSE_ENDPOINT_GRAB_RADIUS, 'mouse');
+          if (grabbed) {
+            pointer.mode = 'draggingEndpoint';
+            pointer.grabbed = grabbed;
+            return;
+          }
+
+          // 2. On touch or regular left-drag when Draw Mode is Off, allow strumming strings
+          pointer.mode = 'touchStrum';
+          pointer.grabbed = null;
+        } else {
+          // Draw a new string
+          pointer.mode = 'drawing';
+          pointer.grabbed = null;
+        }
+      });
+
+      canvas.addEventListener('pointermove', (e) => {
+        if (!isStarted) return;
+        const pos = getPointerPos(e);
+        const now = performance.now();
+
+        const prevX = pointer.hasPrev ? pointer.x : pos.x;
+        const prevY = pointer.hasPrev ? pointer.y : pos.y;
+        pointer.prevX = prevX;
+        pointer.prevY = prevY;
+        pointer.x = pos.x;
+        pointer.y = pos.y;
+        pointer.hasPrev = true;
+
+        const dx = pos.x - prevX;
+        const dy = pos.y - prevY;
+        const moveDist = Math.hypot(dx, dy);
+
+        // Update hover highlight for endpoints
+        if (!pointer.down) {
+          hoveredEndpoint = findNearestAvailableEndpoint(pos.x, pos.y, MOUSE_ENDPOINT_GRAB_RADIUS, 'mouse');
+          canvas.style.cursor = hoveredEndpoint ? 'grab' : (drawMode ? 'crosshair' : 'default');
+
+          // Simply swiping mouse cursor across strings plucks/strums them!
+          if (e.pointerType === 'mouse' && moveDist > 1.8) {
+            const vx = dx * 60;
+            const vy = dy * 60;
+            checkPluckSegment('mouse_hover', prevX, prevY, pos.x, pos.y, vx, vy, Math.hypot(vx, vy), now);
+          }
+          return;
+        }
+
+        if (pointer.mode === 'draggingEndpoint' && pointer.grabbed) {
+          canvas.style.cursor = 'grabbing';
+          const { string, end } = pointer.grabbed;
+          if (end === 'A') {
+            string.ax = pos.x;
+            string.ay = pos.y;
+          } else {
+            string.bx = pos.x;
+            string.by = pos.y;
+          }
+          string.recalculatePhysics();
+          audioEngine.bendVoice(string.activeVoice, string.freq);
+        } else if (pointer.mode === 'touchStrum' && moveDist > 1.8) {
+          const vx = dx * 60;
+          const vy = dy * 60;
+          checkPluckSegment('pointer_strum', prevX, prevY, pos.x, pos.y, vx, vy, Math.hypot(vx, vy), now);
+        }
+      });
+
+      function endPointer(e) {
+        if (!pointer.down) return;
+
+        if (pointer.mode === 'drawing') {
+          const len = dist(pointer.startX, pointer.startY, pointer.x, pointer.y);
+          if (len >= MIN_STRING_LENGTH) {
+            createStringWithConfirmation(pointer.startX, pointer.startY, pointer.x, pointer.y);
+          }
+        }
+
+        pointer.down = false;
+        pointer.mode = 'idle';
+        pointer.grabbed = null;
+        canvas.style.cursor = drawMode ? 'crosshair' : 'default';
+        try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      }
+
+      canvas.addEventListener('pointerup', endPointer);
+      canvas.addEventListener('pointercancel', endPointer);
+
+      /* =====================================================================
+       * 9. CANVAS RENDERING (WEBCAM/STUDIO, STRINGS, SPARKS, HAND SKELETON)
+       * ===================================================================== */
+
+      function drawBackground() {
+        if (cameraActive && video.readyState >= 2) {
+          const { drawW, drawH, offsetX, offsetY } = getVideoCoverRect();
+          ctx.save();
+          ctx.translate(viewW, 0);
+          ctx.scale(-1, 1);
+          ctx.drawImage(video, offsetX, offsetY, drawW, drawH);
+          ctx.restore();
+        } else {
+          // Sleek dark studio radial gradient background
+          const grad = ctx.createRadialGradient(
+            viewW * 0.5, viewH * 0.45, 30,
+            viewW * 0.5, viewH * 0.5, Math.max(viewW, viewH) * 0.8
+          );
+          grad.addColorStop(0, '#171d2c');
+          grad.addColorStop(0.58, '#0c101a');
+          grad.addColorStop(1, '#06080d');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, viewW, viewH);
+
+          // Subtle studio acoustic grid
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.032)';
+          ctx.lineWidth = 1;
+          const step = 48;
+          ctx.beginPath();
+          for (let x = step; x < viewW; x += step) {
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, viewH);
+          }
+          for (let y = step; y < viewH; y += step) {
+            ctx.moveTo(0, y);
+            ctx.lineTo(viewW, y);
+          }
+          ctx.stroke();
+          ctx.restore();
+
+          if (isStarted && strings.length === 0 && pointer.mode !== 'drawing') {
+            ctx.save();
+            ctx.fillStyle = 'rgba(226, 232, 240, 0.48)';
+            ctx.font = '500 14px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Click "Load Harp Preset" or Shift+Drag (or enable Draw Mode) to create strings', viewW * 0.5, viewH * 0.5);
+            ctx.restore();
+          }
+        }
+      }
+
+      /**
+       * Renders a floating note pill badge (e.g. "G4 • 392 Hz")
+       */
+      function drawFloatingBadge(x, y, text, accentCss = '#38bdf8') {
+        ctx.save();
+        ctx.font = '600 12px Inter, sans-serif';
+        const metrics = ctx.measureText(text);
+        const padX = 10;
+        const w = metrics.width + padX * 2;
+        const h = 24;
+        const bx = x - w * 0.5;
+        const by = y - h - 14;
+
+        ctx.fillStyle = 'rgba(10, 14, 24, 0.82)';
+        ctx.strokeStyle = accentCss;
+        ctx.lineWidth = 1.25;
+
+        ctx.beginPath();
+        ctx.roundRect(bx, by, w, h, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#f8fafc';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, x, by + h * 0.5 + 0.5);
+        ctx.restore();
+      }
+
+      /**
+       * Draws a single string with fret tick marks, anchor nodes, subtle note label,
+       * and 3 phase-offset multi-harmonic glowing standing wave ribbons when vibrating.
+       */
+      function drawString(s) {
+        const dx = s.bx - s.ax;
+        const dy = s.by - s.ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const nx = -uy;
+        const ny = ux;
+
+        // 1. Evenly spaced perpendicular fret tick marks
+        ctx.save();
+        ctx.strokeStyle = s.energy > 0.02
+          ? `rgba(255, 255, 255, ${0.42 + Math.min(0.38, s.energy * 0.35)})`
+          : 'rgba(255, 255, 255, 0.45)';
+        ctx.lineWidth = 1.2;
+        const tickSpacing = 22;
+        const tickCount = Math.floor(len / tickSpacing);
+        const tickLen = 6;
+
+        ctx.beginPath();
+        for (let i = 1; i < tickCount; i++) {
+          const d = i * tickSpacing;
+          const tx = s.ax + ux * d;
+          const ty = s.ay + uy * d;
+          ctx.moveTo(tx - nx * (tickLen * 0.45), ty - ny * (tickLen * 0.45));
+          ctx.lineTo(tx + nx * (tickLen * 0.55), ty + ny * (tickLen * 0.55));
+        }
+        ctx.stroke();
+        ctx.restore();
+
+        // 2. Idle baseline or 3-ribbon multi-harmonic vibrating standing waves
+        if (s.energy <= 0.004) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.82)';
+          ctx.lineWidth = 2.0;
+          ctx.beginPath();
+          ctx.moveTo(s.ax, s.ay);
+          ctx.lineTo(s.bx, s.by);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          const samples = 52;
+          const maxAmp = Math.min(28, 8 + len * 0.04) * s.energy;
+          const tp = s.pluckPos;
+
+          const w1 = Math.sin(Math.PI * tp);
+          const w2 = 0.54 * Math.sin(2 * Math.PI * tp);
+          const w3 = 0.26 * Math.sin(3 * Math.PI * tp);
+
+          const ribbons = [
+            { phaseOff: 0.00, ampScale: 1.00, alpha: 0.95, width: 2.9, blur: 18 },
+            { phaseOff: 1.20, ampScale: 0.82, alpha: 0.65, width: 2.1, blur: 12 },
+            { phaseOff: 2.45, ampScale: 0.60, alpha: 0.42, width: 1.5, blur: 8 }
+          ];
+
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+
+          for (const rb of ribbons) {
+            const p1 = Math.sin(s.phase + rb.phaseOff);
+            const p2 = Math.sin(s.phase * 2.02 + rb.phaseOff * 1.4);
+            const p3 = Math.sin(s.phase * 3.05 + rb.phaseOff * 1.9);
+
+            ctx.beginPath();
+            for (let i = 0; i <= samples; i++) {
+              const t = i / samples;
+              const disp = maxAmp * rb.ampScale * (
+                w1 * Math.sin(Math.PI * t) * p1 +
+                w2 * Math.sin(2 * Math.PI * t) * p2 +
+                w3 * Math.sin(3 * Math.PI * t) * p3
+              );
+              const px = s.ax + dx * t + nx * disp;
+              const py = s.ay + dy * t + ny * disp;
+              if (i === 0) ctx.moveTo(px, py);
+              else ctx.lineTo(px, py);
+            }
+
+            ctx.shadowBlur = rb.blur;
+            ctx.shadowColor = s.color.css;
+            ctx.strokeStyle = `rgba(${s.color.r}, ${s.color.g}, ${s.color.b}, ${rb.alpha})`;
+            ctx.lineWidth = rb.width;
+            ctx.stroke();
+          }
+
+          // Bright white hot core on primary wave
+          const c1 = Math.sin(s.phase);
+          const c2 = Math.sin(s.phase * 2.02);
+          const c3 = Math.sin(s.phase * 3.05);
+          ctx.beginPath();
+          for (let i = 0; i <= samples; i++) {
+            const t = i / samples;
+            const disp = maxAmp * (
+              w1 * Math.sin(Math.PI * t) * c1 +
+              w2 * Math.sin(2 * Math.PI * t) * c2 +
+              w3 * Math.sin(3 * Math.PI * t) * c3
+            );
+            const px = s.ax + dx * t + nx * disp;
+            const py = s.ay + dy * t + ny * disp;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          ctx.shadowBlur = 6;
+          ctx.shadowColor = '#ffffff';
+          ctx.strokeStyle = `rgba(255, 255, 255, ${0.55 + Math.min(0.45, s.energy * 0.45)})`;
+          ctx.lineWidth = 1.25;
+          ctx.stroke();
+
+          ctx.restore();
+        }
+
+        // 3. Glowing circular anchor nodes at both endpoints
+        ctx.save();
+        ctx.fillStyle = '#ffffff';
+        ctx.shadowBlur = s.energy > 0.04 ? 12 : 6;
+        ctx.shadowColor = s.energy > 0.04 ? s.color.css : 'rgba(255, 255, 255, 0.75)';
+
+        ctx.beginPath();
+        ctx.arc(s.ax, s.ay, 4.6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(s.bx, s.by, 4.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // 4. Subtle hover highlight ring if mouse/hand is near an endpoint
+        if (hoveredEndpoint && hoveredEndpoint.string === s) {
+          const hx = hoveredEndpoint.end === 'A' ? s.ax : s.bx;
+          const hy = hoveredEndpoint.end === 'A' ? s.ay : s.by;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 210, 90, 0.85)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(hx, hy, 12, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // 5. Subtle note label near left/start anchor
+        ctx.save();
+        const labelX = s.ax <= s.bx ? s.ax - 12 : s.bx - 12;
+        const labelY = s.ax <= s.bx ? s.ay + 4 : s.by + 4;
+        ctx.font = '600 11px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillStyle = s.energy > 0.05 ? s.color.css : 'rgba(226, 232, 240, 0.58)';
+        ctx.fillText(s.noteName, labelX, labelY);
+        ctx.restore();
+      }
+
+      function drawPinchRing(x, y, radius = 12) {
+        ctx.save();
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = '#ffaa00';
+        ctx.strokeStyle = '#ffaa00';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = '#ffe066';
+        ctx.strokeStyle = '#ffe066';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.arc(x, y, radius - 2.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawCreationPreview(x1, y1, x2, y2) {
+        const len = dist(x1, y1, x2, y2);
+        const previewFreq = lengthToFrequency(len, currentScale);
+        const note = freqToNoteName(previewFreq);
+        const col = freqToNeonColor(previewFreq);
+
+        ctx.save();
+        ctx.strokeStyle = len >= MIN_STRING_LENGTH ? 'rgba(255, 255, 255, 0.92)' : 'rgba(255, 120, 120, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([7, 6]);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        drawPinchRing(x1, y1, 11);
+        drawPinchRing(x2, y2, 11);
+
+        const midX = (x1 + x2) * 0.5;
+        const midY = (y1 + y2) * 0.5;
+        const badgeText = len >= MIN_STRING_LENGTH
+          ? `${note} • ${Math.round(previewFreq)} Hz`
+          : 'Stretch further...';
+        drawFloatingBadge(midX, midY, badgeText, len >= MIN_STRING_LENGTH ? col.css : '#f87171');
+      }
+
+      function drawSparks() {
+        if (sparks.length === 0) return;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineCap = 'round';
+
+        for (const p of sparks) {
+          const alpha = Math.max(0, Math.min(1, p.life));
+          const tailX = p.x - p.vx * 0.026;
+          const tailY = p.y - p.vy * 0.026;
+
+          ctx.strokeStyle = p.isWhite
+            ? `rgba(255, 255, 255, ${alpha})`
+            : p.color.replace('rgb(', 'rgba(').replace(')', `, ${alpha})`);
+          ctx.lineWidth = p.size * (0.5 + alpha * 0.65);
+
+          ctx.beginPath();
+          ctx.moveTo(tailX, tailY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawHands() {
+        for (const hand of trackedHands.values()) {
+          const pts = hand.pts;
+          if (!pts || pts.length < 21) continue;
+
+          if (showSkeleton) {
+            // Bright green bone connections (#00ff00, 2px)
+            ctx.save();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            for (const [a, b] of HAND_CONNECTIONS) {
+              ctx.moveTo(pts[a].x, pts[a].y);
+              ctx.lineTo(pts[b].x, pts[b].y);
+            }
+            ctx.stroke();
+            ctx.restore();
+
+            // Crisp red dots (#ff0000, radius 4px) on all 21 landmarks
+            ctx.save();
+            ctx.fillStyle = '#ff0000';
+            for (let i = 0; i < 21; i++) {
+              ctx.beginPath();
+              ctx.arc(pts[i].x, pts[i].y, 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+
+            // Crisp white hollow rings around thumb tip (4) and index fingertip (8)
+            ctx.save();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            for (const idx of [4, 8]) {
+              ctx.beginPath();
+              ctx.arc(pts[idx].x, pts[idx].y, 7.5, 0, Math.PI * 2);
+              ctx.stroke();
+            }
+            ctx.restore();
+          }
+
+          // Subtle hover highlight when hand pinch midpoint is near an endpoint
+          if (!hand.isPinching) {
+            const near = findNearestAvailableEndpoint(hand.pinchX, hand.pinchY, HAND_ENDPOINT_GRAB_RADIUS, hand.key);
+            if (near) {
+              const hx = near.end === 'A' ? near.string.ax : near.string.bx;
+              const hy = near.end === 'A' ? near.string.ay : near.string.by;
+              ctx.save();
+              ctx.strokeStyle = 'rgba(255, 170, 0, 0.75)';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(hx, hy, 13, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            }
+          }
+
+          // Glowing orange-gold pinch ring (#ffaa00)
+          if (hand.isPinching) {
+            drawPinchRing(hand.pinchX, hand.pinchY, 12);
+          }
+        }
+      }
+
+      /* =====================================================================
+       * 10. MAIN 60 FPS ANIMATION LOOP
+       * ===================================================================== */
+
+      let lastFrameTime = performance.now();
+
+      function animate(now) {
+        const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+        lastFrameTime = now;
+
+        for (const s of strings) {
+          s.update(dt);
+        }
+        updateSparks(dt);
+
+        drawBackground();
+
+        for (const s of strings) {
+          drawString(s);
+        }
+
+        if (twoHandPreview) {
+          drawCreationPreview(twoHandPreview.x1, twoHandPreview.y1, twoHandPreview.x2, twoHandPreview.y2);
+        } else if (pointer.down && pointer.mode === 'drawing') {
+          drawCreationPreview(pointer.startX, pointer.startY, pointer.x, pointer.y);
+        } else if (pointer.down && pointer.mode === 'draggingEndpoint' && pointer.grabbed) {
+          const g = pointer.grabbed;
+          const gx = g.end === 'A' ? g.string.ax : g.string.bx;
+          const gy = g.end === 'A' ? g.string.ay : g.string.by;
+          drawPinchRing(gx, gy, 12);
+          drawFloatingBadge(gx, gy, `${g.string.noteName} • ${Math.round(g.string.freq)} Hz`, g.string.color.css);
+        }
+
+        drawSparks();
+        drawHands();
+
+        requestAnimationFrame(animate);
+      }
+
+      /* =====================================================================
+       * 11. WEBCAM & MEDIAPIPE INITIALIZATION
+       * ===================================================================== */
+
+      const cameraStatusBadge = document.getElementById('cameraStatusBadge');
+
+      function setCameraStatus(text, visible = true) {
+        cameraStatusBadge.textContent = text;
+        cameraStatusBadge.classList.toggle('hidden', !visible);
+      }
+
+      async function startCamera() {
+        try {
+          setCameraStatus('Loading Hands...', true);
+
+          if (!handsDetector) {
+            if (typeof Hands === 'undefined') {
+              throw new Error('MediaPipe Hands CDN did not load.');
+            }
+            handsDetector = new Hands({
+              locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            });
+            handsDetector.setOptions({
+              maxNumHands: 2,
+              modelComplexity: 1,
+              minDetectionConfidence: 0.65,
+              minTrackingConfidence: 0.6
+            });
+            handsDetector.onResults(onMediaPipeResults);
+          }
+
+          if (typeof Camera !== 'undefined') {
+            mpCamera = new Camera(video, {
+              onFrame: async () => {
+                if (!cameraActive || isSendingFrame) return;
+                isSendingFrame = true;
+                try {
+                  await handsDetector.send({ image: video });
+                } catch (_) {}
+                isSendingFrame = false;
+              },
+              width: 1280,
+              height: 720
+            });
+            await mpCamera.start();
+          } else {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+              audio: false
+            });
+            video.srcObject = stream;
+            await video.play();
+            const pump = async () => {
+              if (!cameraActive) return;
+              if (video.readyState >= 2 && !isSendingFrame) {
+                isSendingFrame = true;
+                try { await handsDetector.send({ image: video }); } catch (_) {}
+                isSendingFrame = false;
+              }
+              requestAnimationFrame(pump);
+            };
+            requestAnimationFrame(pump);
+          }
+
+          cameraActive = true;
+          setCameraStatus('', false);
+          updateCameraBtn();
+          showToast('Camera & Hand Tracking active!');
+        } catch (err) {
+          console.error('Camera error:', err);
+          cameraActive = false;
+          setCameraStatus('', false);
+          updateCameraBtn();
+          showToast('Webcam unavailable — Mouse / Touch mode is ready!', 3500);
+        }
+      }
+
+      function stopCamera() {
+        cameraActive = false;
+        trackedHands.clear();
+        twoHandPreview = null;
+        setCameraStatus('', false);
+
+        if (mpCamera && typeof mpCamera.stop === 'function') {
+          try { mpCamera.stop(); } catch (_) {}
+          mpCamera = null;
+        }
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(t => t.stop());
+          video.srcObject = null;
+        }
+        updateCameraBtn();
+      }
+
+      /* =====================================================================
+       * 12. HARP PRESET LOADER
+       * ===================================================================== */
+
+      function loadHarpPreset() {
+        audioEngine.unlockSync();
+        strings.length = 0;
+
+        // 5 well-spaced harmonic strings (graduated lengths for a rich C pentatonic chord)
+        const baseW = Math.min(viewW * 0.62, 620);
+        const minW = Math.max(150, baseW * 0.36);
+        const count = 5;
+        const centerX = viewW * 0.5;
+        const startY = Math.max(150, viewH * 0.28);
+        const spanY = Math.min(viewH * 0.48, 320);
+
+        for (let i = 0; i < count; i++) {
+          const frac = i / (count - 1);
+          // Bottom strings longer (deeper bass), top strings shorter (higher harp notes)
+          const len = minW + (baseW - minW) * frac;
+          const y = startY + frac * spanY;
+          const tilt = (frac - 0.5) * 18;
+          const ax = centerX - len * 0.5;
+          const bx = centerX + len * 0.5;
+          const s = new AirStringEntity(ax, y + tilt, bx, y - tilt);
+          strings.push(s);
+
+          // Gentle welcoming strum cascade
+          setTimeout(() => {
+            s.pluck(0.45, 0.55, centerX, y, 0, 180, viewW, audioEngine);
+          }, i * 85);
+        }
+
+        showToast('Loaded 5-string Harp Preset — swipe across to strum!');
+      }
+
+      /* =====================================================================
+       * 13. HUD CONTROLS, AUDIO STATUS PILL & GLOBAL AUTO-UNLOCK
+       * ===================================================================== */
+
+      const welcomeOverlay = document.getElementById('welcomeOverlay');
+      const hudWrapper = document.getElementById('hudWrapper');
+      const hudPanel = document.getElementById('hudPanel');
+      const hudChevron = document.getElementById('hudChevron');
+      const btnToggleHud = document.getElementById('btnToggleHud');
+      const btnAudioStatus = document.getElementById('btnAudioStatus');
+      const audioStatusDot = document.getElementById('audioStatusDot');
+      const audioStatusText = document.getElementById('audioStatusText');
+      const btnTestSound = document.getElementById('btnTestSound');
+      const btnStartCamera = document.getElementById('btnStartCamera');
+      const btnStartMouse = document.getElementById('btnStartMouse');
+      const selectTimbre = document.getElementById('selectTimbre');
+      const selectScale = document.getElementById('selectScale');
+      const btnLoadPreset = document.getElementById('btnLoadPreset');
+      const btnDrawMode = document.getElementById('btnDrawMode');
+      const sliderVolume = document.getElementById('sliderVolume');
+      const volumeValue = document.getElementById('volumeValue');
+      const btnUndo = document.getElementById('btnUndo');
+      const btnClear = document.getElementById('btnClear');
+      const btnToggleCamera = document.getElementById('btnToggleCamera');
+      const btnToggleSkeleton = document.getElementById('btnToggleSkeleton');
+      const toastEl = document.getElementById('toast');
+
+      let toastTimer = null;
+      function showToast(msg, duration = 2600) {
+        toastEl.textContent = msg;
+        toastEl.classList.remove('opacity-0');
+        toastEl.classList.add('opacity-100');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          toastEl.classList.remove('opacity-100');
+          toastEl.classList.add('opacity-0');
+        }, duration);
+      }
+
+      function updateAudioStatusUI(state) {
+        if (state === 'running') {
+          btnAudioStatus.className = 'flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-[11px] font-semibold text-emerald-200 transition cursor-pointer';
+          audioStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+          audioStatusText.textContent = 'Audio Ready';
+        } else {
+          btnAudioStatus.className = 'flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/20 border border-amber-400/40 text-[11px] font-semibold text-amber-200 transition cursor-pointer';
+          audioStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+          audioStatusText.textContent = 'Click to Enable Audio';
+        }
+      }
+
+      audioEngine.onStateChangeCallback = updateAudioStatusUI;
+
+      // Global auto-unlock listeners to guarantee AudioContext wakes up on any interaction
+      function globalAudioWake() {
+        if (audioEngine.ctx && audioEngine.ctx.state !== 'running') {
+          audioEngine.unlockSync();
+        }
+      }
+      window.addEventListener('pointerdown', globalAudioWake, { passive: true });
+      window.addEventListener('touchstart', globalAudioWake, { passive: true });
+      window.addEventListener('keydown', globalAudioWake, { passive: true });
+
+      function enterApp() {
+        isStarted = true;
+        welcomeOverlay.classList.add('opacity-0', 'pointer-events-none');
+        setTimeout(() => welcomeOverlay.classList.add('hidden'), 300);
+        hudWrapper.classList.remove('hidden');
+        hudWrapper.classList.add('flex');
+      }
+
+      function updateCameraBtn() {
+        btnToggleCamera.textContent = cameraActive ? 'Cam: On' : 'Cam: Off';
+        btnToggleCamera.classList.toggle('bg-cyan-500/20', cameraActive);
+        btnToggleCamera.classList.toggle('text-cyan-200', cameraActive);
+        btnToggleCamera.classList.toggle('border-cyan-400/35', cameraActive);
+      }
+
+      function updateDrawModeBtn() {
+        btnDrawMode.textContent = drawMode ? 'Draw Mode: On' : 'Draw Mode: Off';
+        btnDrawMode.classList.toggle('bg-amber-500/25', drawMode);
+        btnDrawMode.classList.toggle('border-amber-400/45', drawMode);
+        btnDrawMode.classList.toggle('text-amber-100', drawMode);
+        canvas.style.cursor = drawMode ? 'crosshair' : 'default';
+      }
+
+      // Startup Buttons — audioEngine.unlockSync() runs SYNCHRONOUSLY before any await!
+      btnStartCamera.addEventListener('click', () => {
+        audioEngine.unlockSync();
+        enterApp();
+        startCamera();
+      });
+
+      btnStartMouse.addEventListener('click', () => {
+        audioEngine.unlockSync();
+        enterApp();
+        updateCameraBtn();
+        loadHarpPreset();
+      });
+
+      btnAudioStatus.addEventListener('click', () => {
+        audioEngine.unlockSync();
+        updateAudioStatusUI(audioEngine.state);
+        if (audioEngine.state === 'running') {
+          showToast('Audio Engine Unlocked!', 1600);
+        }
+      });
+
+      btnTestSound.addEventListener('click', () => {
+        audioEngine.unlockSync();
+        audioEngine.playTestChord();
+        updateAudioStatusUI(audioEngine.state);
+      });
+
+      btnToggleHud.addEventListener('click', () => {
+        hudExpanded = !hudExpanded;
+        hudPanel.classList.toggle('hidden', !hudExpanded);
+        hudChevron.style.transform = hudExpanded ? 'rotate(0deg)' : 'rotate(180deg)';
+      });
+
+      selectTimbre.addEventListener('change', (e) => {
+        audioEngine.unlockSync();
+        audioEngine.setTimbre(e.target.value);
+        showToast(`Timbre: ${TIMBRE_PRESETS[e.target.value].name}`, 1800);
+      });
+
+      selectScale.addEventListener('change', (e) => {
+        currentScale = e.target.value;
+        for (const s of strings) {
+          s.recalculatePhysics();
+          audioEngine.bendVoice(s.activeVoice, s.freq);
+        }
+        showToast(`Scale: ${e.target.options[e.target.selectedIndex].text}`, 1800);
+      });
+
+      btnLoadPreset.addEventListener('click', loadHarpPreset);
+
+      btnDrawMode.addEventListener('click', () => {
+        drawMode = !drawMode;
+        updateDrawModeBtn();
+        showToast(drawMode ? 'Draw Mode ON — drag anywhere to draw strings' : 'Draw Mode OFF — swipe to strum', 2000);
+      });
+
+      sliderVolume.addEventListener('input', (e) => {
+        const v = parseFloat(e.target.value);
+        audioEngine.setVolume(v);
+        volumeValue.textContent = `${Math.round(v * 100)}%`;
+      });
+
+      btnUndo.addEventListener('click', () => {
+        if (strings.length > 0) {
+          strings.pop();
+          showToast('Removed last string', 1400);
+        }
+      });
+
+      btnClear.addEventListener('click', () => {
+        if (strings.length > 0) {
+          strings.length = 0;
+          showToast('Cleared all strings', 1400);
+        }
+      });
+
+      btnToggleCamera.addEventListener('click', () => {
+        audioEngine.unlockSync();
+        if (cameraActive) {
+          stopCamera();
+          showToast('Switched to Mouse / Touch mode');
+        } else {
+          startCamera();
+        }
+      });
+
+      btnToggleSkeleton.addEventListener('click', () => {
+        showSkeleton = !showSkeleton;
+        btnToggleSkeleton.textContent = showSkeleton ? 'Hands: On' : 'Hands: Off';
+        btnToggleSkeleton.classList.toggle('bg-emerald-500/20', showSkeleton);
+        btnToggleSkeleton.classList.toggle('text-emerald-200', showSkeleton);
+        btnToggleSkeleton.classList.toggle('bg-white/8', !showSkeleton);
+        btnToggleSkeleton.classList.toggle('text-slate-300', !showSkeleton);
+      });
+
+      // Keyboard shortcuts: H (collapse HUD), Z (undo), C (clear), D (draw mode)
+      window.addEventListener('keydown', (e) => {
+        if (!isStarted || e.target.tagName === 'SELECT') return;
+        const k = e.key.toLowerCase();
+        if (k === 'h') btnToggleHud.click();
+        else if (k === 'z') btnUndo.click();
+        else if (k === 'c') btnClear.click();
+        else if (k === 'd') btnDrawMode.click();
+      });
+
+      // Start animation loop on window load
+      window.onload = () => {
+        resizeCanvas();
+        lastFrameTime = performance.now();
+        requestAnimationFrame(animate);
+      };
+    })();
+  </script>
+</body>
+</html>
